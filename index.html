@@ -1,0 +1,2206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VAULT :: local file desk</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --bg: #030604;
+            --panel: #07110b;
+            --ink: #c8f5d4;
+            --dim: #7dcea0;
+            --faint: #3d6b4a;
+            --line: #1c6b34;
+            --glow: #39ff6a;
+            --danger: #ff5c6a;
+            --warn: #e6c15a;
+        }
+
+        * { box-sizing: border-box; }
+
+        html, body { height: 100%; }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--ink);
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        body::before {
+            content: "";
+            pointer-events: none;
+            position: fixed;
+            inset: 0;
+            z-index: 40;
+            background: repeating-linear-gradient(
+                to bottom,
+                rgba(0, 0, 0, 0.18) 0px,
+                rgba(0, 0, 0, 0.18) 1px,
+                transparent 1px,
+                transparent 3px
+            );
+        }
+
+        ::selection { background: #145c28; color: #e7ffe9; }
+        ::placeholder { color: var(--faint); }
+
+        button, input, select, textarea { font-family: inherit; color: inherit; }
+
+        .hidden { display: none !important; }
+        .opacity-50 { opacity: 0.4; }
+        .pointer-events-none { pointer-events: none; }
+
+        .desk {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            z-index: 1;
+        }
+
+        .topbar, .rail, .window, .pane, .field, .term-btn, .seg, .drop-zone {
+            border: 1px solid var(--line);
+        }
+
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: 0.55rem 0.9rem;
+            background: #050c08;
+            letter-spacing: 0.08em;
+        }
+
+        .brand {
+            color: var(--glow);
+            font-weight: 700;
+            text-shadow: 0 0 10px rgba(57, 255, 106, 0.45);
+            letter-spacing: 0.18em;
+        }
+
+        .brand span { color: var(--dim); font-weight: 400; letter-spacing: 0.04em; }
+
+        .top-meta { display: flex; align-items: center; gap: 1rem; color: var(--dim); }
+
+        .pill {
+            border: 1px solid var(--line);
+            padding: 0.1rem 0.45rem;
+            color: var(--glow);
+            letter-spacing: 0.14em;
+            font-size: 11px;
+        }
+
+        .blink::after {
+            content: "█";
+            margin-left: 0.35rem;
+            animation: blink 1.1s steps(1) infinite;
+        }
+
+        @keyframes blink { 50% { opacity: 0; } }
+
+        @media (prefers-reduced-motion: reduce) {
+            .blink::after { animation: none; }
+        }
+
+        .workspace {
+            flex: 1;
+            display: flex;
+            min-height: 0;
+        }
+
+        .rail {
+            width: 232px;
+            flex-shrink: 0;
+            background: var(--panel);
+            border-top: 0;
+            border-bottom: 0;
+            border-left: 0;
+            overflow: auto;
+            padding: 0.9rem 0.7rem 1.4rem;
+        }
+
+        .group-label {
+            margin: 0.9rem 0.45rem 0.35rem;
+            color: var(--faint);
+            font-size: 10px;
+            letter-spacing: 0.18em;
+        }
+
+        .nav-btn {
+            width: 100%;
+            text-align: left;
+            background: transparent;
+            border: 0;
+            color: var(--dim);
+            padding: 0.42rem 0.5rem;
+            cursor: pointer;
+            letter-spacing: 0.04em;
+        }
+
+        .nav-btn::before { content: "·  "; color: var(--faint); }
+        .nav-btn:hover { color: var(--ink); background: rgba(57, 255, 106, 0.04); }
+        .nav-btn.active {
+            color: var(--ink);
+            background: #102616;
+            box-shadow: inset 2px 0 0 var(--glow);
+        }
+        .nav-btn.active::before { content: ">  "; color: var(--glow); }
+
+        .stage {
+            flex: 1;
+            min-width: 0;
+            padding: 0.85rem;
+            display: flex;
+        }
+
+        .window {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            background: rgba(5, 12, 7, 0.94);
+            box-shadow: 0 0 40px rgba(57, 255, 106, 0.05);
+        }
+
+        .titlebar, .statusbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: 0.45rem 0.8rem;
+            color: var(--dim);
+            letter-spacing: 0.06em;
+        }
+
+        .titlebar { border-bottom: 1px solid var(--line); color: var(--glow); }
+        .statusbar { border-top: 1px solid var(--line); font-size: 11px; }
+
+        #win-title { text-shadow: 0 0 8px rgba(57, 255, 106, 0.35); }
+
+        .window-body {
+            flex: 1;
+            overflow: auto;
+            padding: 1.1rem 1.15rem 1.4rem;
+        }
+
+        .tool-section { min-height: 420px; }
+
+        .section-head { margin-bottom: 1rem; }
+        .section-head h2 {
+            margin: 0 0 0.25rem;
+            font-size: 1.15rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--glow);
+            text-shadow: 0 0 8px rgba(57, 255, 106, 0.35);
+        }
+        .section-head p { margin: 0; color: var(--dim); }
+
+        .head-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .tags { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.7rem; }
+        .tags span, .readout {
+            border: 1px solid var(--line);
+            color: var(--dim);
+            padding: 0.15rem 0.45rem;
+            font-size: 11px;
+            letter-spacing: 0.08em;
+        }
+
+        .readout { display: block; margin-top: 0.85rem; color: var(--warn); }
+
+        .cipher-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.9rem;
+        }
+
+        .pane {
+            background: #061008;
+            padding: 0.95rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .pane.focused {
+            border-color: var(--glow);
+            box-shadow: 0 0 18px rgba(57, 255, 106, 0.12);
+        }
+
+        .pane.drag { background: #0c1c12; }
+
+        .pane h3 {
+            margin: 0;
+            letter-spacing: 0.14em;
+            font-size: 12px;
+            color: var(--glow);
+        }
+
+        .pane p { margin: 0; color: var(--dim); font-size: 12px; }
+
+        .label {
+            display: block;
+            margin-bottom: 0.3rem;
+            color: var(--faint);
+            font-size: 10px;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+        }
+
+        .field, .drop-zone, select, textarea, input[type="text"], input[type="password"], input[type="number"] {
+            width: 100%;
+            background: #030806;
+            border: 1px solid var(--line);
+            padding: 0.55rem 0.65rem;
+            outline: none;
+        }
+
+        .field:focus, textarea:focus, input:focus, select:focus { border-color: var(--glow); }
+
+        select option { background: #07110b; color: var(--ink); }
+
+        input[type="file"] { font-size: 12px; color: var(--dim); }
+        input[type="file"]::file-selector-button {
+            background: transparent;
+            color: var(--glow);
+            border: 1px solid var(--line);
+            font-family: inherit;
+            padding: 0.35rem 0.7rem;
+            margin-right: 0.7rem;
+            cursor: pointer;
+        }
+
+        .file-name { color: var(--glow); font-size: 12px; min-height: 1.2em; }
+
+        .term-btn {
+            background: var(--glow);
+            color: #04140a;
+            border: 1px solid var(--glow);
+            padding: 0.7rem 0.9rem;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            font-weight: 700;
+            font-size: 11px;
+            cursor: pointer;
+        }
+
+        .term-btn:hover { background: #b6ffc9; }
+        .term-btn:disabled { opacity: 0.45; cursor: wait; }
+
+        .term-btn.ghost {
+            background: transparent;
+            color: var(--glow);
+        }
+
+        .term-btn.ghost:hover { background: rgba(57, 255, 106, 0.08); }
+        .term-btn.danger, .term-btn.is-halt {
+            background: transparent;
+            color: var(--danger);
+            border-color: var(--danger);
+        }
+
+        .err { color: var(--danger); font-size: 12px; margin: 0; }
+
+        .split {
+            display: grid;
+            grid-template-columns: 260px 1fr;
+            gap: 0.9rem;
+        }
+
+        .stack { display: flex; flex-direction: column; gap: 0.85rem; }
+        .row { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+        .row > .term-btn { flex: 1; }
+        .spread { display: flex; justify-content: space-between; align-items: center; gap: 0.7rem; }
+
+        .seg {
+            background: transparent;
+            color: var(--dim);
+            border: 1px solid transparent;
+            padding: 0.35rem 0.7rem;
+            cursor: pointer;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            font-size: 11px;
+        }
+
+        .seg.on {
+            color: #04140a;
+            background: var(--glow);
+            border-color: var(--glow);
+        }
+
+        .seg-bar { display: flex; gap: 0.25rem; border: 1px solid var(--line); padding: 0.2rem; width: fit-content; }
+
+        .drop-zone {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            gap: 0.35rem;
+            min-height: 140px;
+            padding: 1.2rem;
+            cursor: pointer;
+            color: var(--dim);
+        }
+
+        .drop-zone:hover, .drop-zone.drag { border-color: var(--glow); color: var(--ink); }
+
+        .grid-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 0.6rem;
+        }
+
+        .file-chip, .file-row {
+            border: 1px solid var(--line);
+            background: #061008;
+            padding: 0.55rem 0.65rem;
+            font-size: 12px;
+        }
+
+        .file-chip { position: relative; }
+        .file-chip button, .file-row button {
+            background: transparent;
+            border: 0;
+            color: var(--danger);
+            cursor: pointer;
+        }
+
+        .file-chip button { position: absolute; top: 0.3rem; right: 0.4rem; }
+        .file-row { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+        .file-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+        .bar, .zip-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.7rem;
+            border: 1px solid var(--line);
+            padding: 0.7rem 0.8rem;
+        }
+
+        .row-end { display: flex; justify-content: flex-end; }
+
+        .zip-bar { border-color: var(--glow); color: var(--glow); }
+
+        .file-line { display: flex; align-items: center; gap: 0.75rem; }
+        .file-pick { width: auto; display: inline-block; cursor: pointer; text-align: center; }
+
+        .visually-hidden {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            background: transparent;
+            border: 0;
+            padding: 0;
+        }
+
+        input[type="range"]::-webkit-slider-runnable-track {
+            height: 2px;
+            background: var(--line);
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 12px;
+            width: 12px;
+            margin-top: -5px;
+            background: var(--glow);
+            border: 0;
+        }
+
+        .unit-grid {
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            gap: 0.8rem;
+            align-items: end;
+        }
+
+        .unit-arrow { color: var(--faint); padding-bottom: 0.6rem; }
+
+        textarea { min-height: 8rem; resize: vertical; }
+        #b64-img-output, #b64-output { word-break: break-all; }
+
+        .qr-plate {
+            background: #f4fff6;
+            min-height: 200px;
+            min-width: 200px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.8rem;
+        }
+
+        .qr-wrap {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 1rem;
+            align-items: start;
+        }
+
+        .pass-out {
+            font-size: 1.25rem;
+            letter-spacing: 0.08em;
+            text-align: center;
+        }
+
+        .sw-face {
+            width: min(100%, 320px);
+            margin: 1.5rem auto;
+            border: 1px solid var(--glow);
+            padding: 2.2rem 1rem;
+            text-align: center;
+            box-shadow: 0 0 24px rgba(57, 255, 106, 0.12);
+        }
+
+        #sw-display {
+            font-size: 3rem;
+            letter-spacing: 0.12em;
+            color: var(--glow);
+            text-shadow: 0 0 12px rgba(57, 255, 106, 0.4);
+        }
+
+        .sw-actions { display: flex; justify-content: center; gap: 0.7rem; }
+
+        .stat b { color: var(--glow); font-weight: 600; }
+
+        .check { display: flex; align-items: center; gap: 0.45rem; color: var(--dim); }
+        .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+
+        #flash { color: var(--glow); min-width: 8rem; text-align: right; }
+
+        .digest {
+            margin: 0;
+            color: var(--dim);
+            word-break: break-all;
+        }
+
+        .dump {
+            margin: 0;
+            max-height: 420px;
+            overflow: auto;
+            white-space: pre;
+            background: #030806;
+            border: 1px solid var(--line);
+            padding: 0.75rem;
+            font: inherit;
+            font-size: 12px;
+            line-height: 1.45;
+            color: var(--ink);
+        }
+
+        .ent-value {
+            font-size: 3rem;
+            letter-spacing: 0.08em;
+            color: var(--glow);
+            text-shadow: 0 0 12px rgba(57, 255, 106, 0.35);
+        }
+
+        @media (max-width: 900px) {
+            .workspace { flex-direction: column; }
+            .rail { width: 100%; max-height: 220px; border-right: 0; border-bottom: 1px solid var(--line); }
+            .cipher-grid, .split, .qr-wrap, .unit-grid { grid-template-columns: 1fr; }
+            .unit-arrow { display: none; }
+            .top-meta .prompt { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="desk">
+        <header class="topbar">
+            <div class="brand">VAULT <span>/ local file desk</span></div>
+            <div class="top-meta">
+                <span class="prompt blink">vault@local</span>
+                <span id="sys-clock">00:00:00</span>
+                <span class="pill">OFFLINE</span>
+            </div>
+        </header>
+
+        <div class="workspace">
+            <aside class="rail">
+                <div class="group-label">FILES</div>
+                <button type="button" class="nav-btn" id="tab-btn-encrypt" onclick="switchTab('encrypt')">Lock files</button>
+                <button type="button" class="nav-btn" id="tab-btn-pass" onclick="switchTab('pass')">Passphrase</button>
+                <button type="button" class="nav-btn" id="tab-btn-checksum" onclick="switchTab('checksum')">Checksum</button>
+                <button type="button" class="nav-btn" id="tab-btn-hmac" onclick="switchTab('hmac')">HMAC</button>
+                <button type="button" class="nav-btn" id="tab-btn-match" onclick="switchTab('match')">Match</button>
+                <button type="button" class="nav-btn" id="tab-btn-split" onclick="switchTab('split')">Split</button>
+                <button type="button" class="nav-btn" id="tab-btn-pack" onclick="switchTab('pack')">Pack</button>
+
+                <div class="group-label">INSPECT</div>
+                <button type="button" class="nav-btn" id="tab-btn-hex" onclick="switchTab('hex')">Hex</button>
+                <button type="button" class="nav-btn" id="tab-btn-strings" onclick="switchTab('strings')">Strings</button>
+                <button type="button" class="nav-btn" id="tab-btn-entropy" onclick="switchTab('entropy')">Entropy</button>
+                <button type="button" class="nav-btn" id="tab-btn-headers" onclick="switchTab('headers')">Headers</button>
+
+                <div class="group-label">MEDIA</div>
+                <button type="button" class="nav-btn" id="tab-btn-image" onclick="switchTab('image')">Image</button>
+                <button type="button" class="nav-btn" id="tab-btn-pdf" onclick="switchTab('pdf')">PDF</button>
+                <button type="button" class="nav-btn" id="tab-btn-strip" onclick="switchTab('strip')">Strip</button>
+
+                <div class="group-label">DATA</div>
+                <button type="button" class="nav-btn" id="tab-btn-text" onclick="switchTab('text')">Text</button>
+                <button type="button" class="nav-btn" id="tab-btn-base64" onclick="switchTab('base64')">Base64</button>
+                <button type="button" class="nav-btn" id="tab-btn-json" onclick="switchTab('json')">JSON</button>
+                <button type="button" class="nav-btn" id="tab-btn-url" onclick="switchTab('url')">URL</button>
+                <button type="button" class="nav-btn" id="tab-btn-uuid" onclick="switchTab('uuid')">UUID</button>
+                <button type="button" class="nav-btn" id="tab-btn-epoch" onclick="switchTab('epoch')">Epoch</button>
+
+                <div class="group-label">UTIL</div>
+                <button type="button" class="nav-btn" id="tab-btn-units" onclick="switchTab('units')">Units</button>
+                <button type="button" class="nav-btn" id="tab-btn-qr" onclick="switchTab('qr')">QR</button>
+                <button type="button" class="nav-btn" id="tab-btn-stopwatch" onclick="switchTab('stopwatch')">Stopwatch</button>
+            </aside>
+
+            <div class="stage">
+                <section class="window">
+                    <div class="titlebar">
+                        <span id="win-title">cipher — files</span>
+                        <span>local session</span>
+                    </div>
+                    <div class="window-body">
+
+                        <div id="section-encrypt" class="tool-section">
+                            <div class="section-head">
+                                <h2>File cipher</h2>
+                                <p>Seal a file or open one that was sealed here. Bytes never leave this browser.</p>
+                                <div class="tags">
+                                    <span>local</span>
+                                    <span>offline</span>
+                                    <span>aes-256-gcm</span>
+                                </div>
+                                <p class="readout">AES-256-GCM · PBKDF2-SHA-256 · 100000 iterations. A lost password cannot be recovered.</p>
+                            </div>
+                            <div class="cipher-grid">
+                                <form id="pane-seal" class="pane focused" onsubmit="processCrypto('enc'); return false;">
+                                    <h3>ENCRYPT</h3>
+                                    <p>Seal a local file. The download is named with .enc appended.</p>
+                                    <div>
+                                        <span class="label">File</span>
+                                        <div class="file-line">
+                                            <label class="term-btn ghost file-pick" for="seal-file">Choose file</label>
+                                            <span id="seal-name" class="file-name">no file chosen</span>
+                                        </div>
+                                        <input id="seal-file" class="visually-hidden" type="file">
+                                    </div>
+                                    <div>
+                                        <label class="label" for="seal-pass">Password</label>
+                                        <input id="seal-pass" type="password" autocomplete="off" placeholder="password">
+                                    </div>
+                                    <button id="seal-btn" type="submit" class="term-btn">Encrypt file</button>
+                                    <p id="seal-error" class="err hidden"></p>
+                                </form>
+                                <form id="pane-open" class="pane" onsubmit="processCrypto('dec'); return false;">
+                                    <h3>DECRYPT</h3>
+                                    <p>Open a sealed file with the same password. .enc is removed from the name.</p>
+                                    <div>
+                                        <span class="label">Sealed file</span>
+                                        <div class="file-line">
+                                            <label class="term-btn ghost file-pick" for="open-file">Choose file</label>
+                                            <span id="open-name" class="file-name">no file chosen</span>
+                                        </div>
+                                        <input id="open-file" class="visually-hidden" type="file">
+                                    </div>
+                                    <div>
+                                        <label class="label" for="open-pass">Password</label>
+                                        <input id="open-pass" type="password" autocomplete="off" placeholder="password">
+                                    </div>
+                                    <button id="open-btn" type="submit" class="term-btn">Decrypt file</button>
+                                    <p id="open-error" class="err hidden"></p>
+                                </form>
+                            </div>
+                        </div>
+
+                        <div id="section-checksum" class="tool-section hidden">
+                            <div class="section-head">
+                                <h2>Checksum</h2>
+                                <p>Digest of a local file. Nothing is uploaded.</p>
+                            </div>
+                            <div class="stack" style="max-width: 720px;">
+                                <div>
+                                    <label class="label" for="sum-alg">Digest</label>
+                                    <select id="sum-alg" onchange="labelChecksum()">
+                                        <option value="SHA-256">SHA-256</option>
+                                        <option value="SHA-384">SHA-384</option>
+                                        <option value="SHA-512">SHA-512</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <span class="label">File</span>
+                                    <div class="file-line">
+                                        <label class="term-btn ghost file-pick" for="sum-file">Choose file</label>
+                                        <span id="sum-name" class="file-name">no file chosen</span>
+                                    </div>
+                                    <input id="sum-file" class="visually-hidden" type="file">
+                                </div>
+                                <button type="button" class="term-btn" onclick="runChecksum()">Hash</button>
+                                <p id="sum-error" class="err hidden"></p>
+                                <div>
+                                    <label class="label" id="sum-out-label" for="sum-out">SHA-256</label>
+                                    <textarea id="sum-out" readonly placeholder="digest"></textarea>
+                                </div>
+                                <button type="button" class="term-btn ghost" onclick="copyChecksum()">Copy digest</button>
+                                <div>
+                                    <label class="label" for="sum-expect">Expected digest</label>
+                                    <input id="sum-expect" type="text" placeholder="paste a digest" oninput="compareChecksum()">
+                                </div>
+                                <p id="sum-note" class="file-name"></p>
+                            </div>
+                        </div>
+
+                        <div id="section-match" class="tool-section hidden">
+                            <div class="section-head">
+                                <h2>Match</h2>
+                                <p>Compare two local files by SHA-256. This checks the bytes, not the names.</p>
+                            </div>
+                            <div class="stack">
+                                <div class="cipher-grid">
+                                    <div class="pane">
+                                        <h3>FILE A</h3>
+                                        <div class="file-line">
+                                            <label class="term-btn ghost file-pick" for="match-a">Choose file</label>
+                                            <span id="match-a-name" class="file-name">no file chosen</span>
+                                        </div>
+                                        <input id="match-a" class="visually-hidden" type="file">
+                                        <p id="match-a-hash" class="digest">—</p>
+                                    </div>
+                                    <div class="pane">
+                                        <h3>FILE B</h3>
+                                        <div class="file-line">
+                                            <label class="term-btn ghost file-pick" for="match-b">Choose file</label>
+                                            <span id="match-b-name" class="file-name">no file chosen</span>
+                                        </div>
+                                        <input id="match-b" class="visually-hidden" type="file">
+                                        <p id="match-b-hash" class="digest">—</p>
+                                    </div>
+                                </div>
+                                <button type="button" class="term-btn" onclick="runMatch()">Compare</button>
+                                <p id="match-error" class="err hidden"></p>
+                                <p id="match-verdict" class="file-name"></p>
+                            </div>
+                        </div>
+
+                        <div id="section-hex" class="tool-section hidden">
+                            <div class="section-head">
+                                <h2>Hex</h2>
+                                <p>The first 4 KB, as offsets, hex, and printable characters.</p>
+                            </div>
+                            <div class="stack">
+                                <div class="file-line">
+                                    <label class="term-btn ghost file-pick" for="hex-file">Choose file</label>
+                                    <span id="hex-name" class="file-name">no file chosen</span>
+                                    <button type="button" class="term-btn" onclick="runHex()">View</button>
+                                    <input id="hex-file" class="visually-hidden" type="file">
+                                </div>
+                                <p id="hex-error" class="err hidden"></p>
+                                <p id="hex-note" class="file-name"></p>
+                                <pre id="hex-out" class="dump"></pre>
+                            </div>
+                        </div>
+
+                        <div id="section-strings" class="tool-section hidden">
+                            <div class="section-head">
+                                <h2>Strings</h2>
+                                <p>Printable runs of at least 4 characters, pulled from the file.</p>
+                            </div>
+                            <div class="stack">
+                                <div class="file-line">
+                                    <label class="term-btn ghost file-pick" for="str-file">Choose file</label>
+                                    <span id="str-name" class="file-name">no file chosen</span>
+                                    <button type="button" class="term-btn" onclick="runStrings()">Extract</button>
+                                    <input id="str-file" class="visually-hidden" type="file">
+                                </div>
+                                <p id="str-error" class="err hidden"></p>
+                                <p id="str-note" class="file-name"></p>
+                                <pre id="str-out" class="dump"></pre>
+                            </div>
+                        </div>
+
+                        <div id="section-entropy" class="tool-section hidden">
+                            <div class="section-head">
+                                <h2>Entropy</h2>
+                                <p>Shannon entropy of the bytes, from 0.00 to 8.00. A sealed or compressed file tends to read high.</p>
+                            </div>
+                            <div class="stack" style="max-width: 520px;">
+                                <div class="file-line">
+                                    <label class="term-btn ghost file-pick" for="ent-file">Choose file</label>
+                                    <span id="ent-name" class="file-name">no file chosen</span>
+                                    <button type="button" class="term-btn" onclick="runEntropy()">Read</button>
+                                    <input id="ent-file" class="visually-hidden" type="file">
+                                </div>
+                                <p id="ent-error" class="err hidden"></p>
+                                <div class="sw-face" style="width:100%; margin:0;">
+                                    <div id="ent-value" class="ent-value">—</div>
+                                    <div id="ent-read" class="file-name">waiting</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="section-hmac" class="tool-section hidden">
+                            <div class="section-head">
+                                <h2>HMAC</h2>
+                                <p>A keyed digest. The key stays in this tab.</p>
+                            </div>
+                            <div class="stack" style="max-width: 720px;">
+                                <div>
+                                    <label class="label" for="hmac-alg">Digest</label>
+                                    <select id="hmac-alg">
+                                        <option value="SHA-256">SHA-256</option>
+                                        <option value="SHA-384">SHA-384</option>
+                                        <option value="SHA-512">SHA-512</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <span class="label">File</span>
+                                    <div class="file-line">
+                                        <label class="term-btn ghost file-pick" for="hmac-file">Choose file</label>
+                                        <span id="hmac-name" class="file-name">no file chosen</span>
+                                    </div>
+                                    <input id="hmac-file" class="visually-hidden" type="file">
+                                </div>
+                                <div>
+                                    <label class="label" for="hmac-key">Key</label>
+                                    <input id="hmac-key" type="password" autocomplete="off" placeholder="key">
+                                </div>
+                                <button type="button" class="term-btn" onclick="runHmac()">Sign</button>
+                                <p id="hmac-error" class="err hidden"></p>
+                                <div>
+                                    <label class="label" for="hmac-out">Digest</label>
+                                    <textarea id="hmac-out" readonly placeholder="digest"></textarea>
+                                </div>
+                                <button type="button" class="term-btn ghost" onclick="copyHmac()">Copy digest</button>
+                            </div>
+                        </div>
+
+                        <div id="section-split" class="tool-section hidden">
+                            <div class="section-head head-row">
+                                <div>
+                                    <h2>Split</h2>
+                                    <p>Cut a file into ordered parts, or put those parts back together.</p>
+                                </div>
+                                <div class="seg-bar">
+                                    <button type="button" id="split-sub-cut" class="seg on" onclick="switchSplitMode('cut')">Split</button>
+                                    <button type="button" id="split-sub-join" class="seg" onclick="switchSplitMode('join')">Join</button>
+                                </div>
+                            </div>
+                            <div id="split-cut-ui" class="stack" style="max-width: 720px;">
+                                <div>
+                                    <span class="label">File</span>
+                                    <div class="file-line">
+                                        <label class="term-btn ghost file-pick" for="split-file">Choose file</label>
+                                        <span id="split-name" class="file-name">no file chosen</span>
+                                    </div>
+                                    <input id="split-file" class="visually-hidden" type="file">
+                                </div>
+                                <div>
+                                    <label class="label" for="split-size">Chunk size in bytes</label>
+                                    <input id="split-size" type="number" min="1" value="1048576">
+                                </div>
+                                <button type="button" class="term-btn" onclick="runSplit()">Split and download</button>
+                                <p id="split-error" class="err hidden"></p>
+                            </div>
+                            <div id="split-join-ui" class="stack hidden" style="max-width: 720px;">
+                                <div>
+                                    <span class="label">Parts or the parts zip</span>
+                                    <div class="file-line">
+                                        <label class="term-btn ghost file-pick" for="join-files">Choose files</label>
+                                        <span id="join-name" class="file-name">no files chosen</span>
+                                    </div>
+                                    <input id="join-files" class="visually-hidden" type="file" multiple>
+                                </div>
+                                <button type="button" class="term-btn" onclick="runJoin()">Join and download</button>
+                                <p id="join-error" class="err hidden"></p>
+                            </div>
+                        </div>
+
+                        <div id="section-pack" class="tool-section hidden">
+                            <div class="section-head">
+                                <h2>Pack</h2>
+                                <p>Zip several local files into archive.zip.</p>
+                            </div>
+                            <div class="stack" style="max-width: 720px;">
+                                <div class="file-line">
+                                    <label class="term-btn ghost file-pick" for="pack-files">Choose files</label>
+                                    <span id="pack-name" class="file-name">no files chosen</span>
+                                </div>
+                                <input id="pack-files" class="visually-hidden" type="file" multiple>
+                                <ul id="pack-list" class="stack"></ul>
+                                <button type="button" class="term-btn" onclick="runPack()">Pack zip</button>
+                                <p id="pack-error" class="err hidden"></p>
+                            </div>
+                        </div>
+
+                        <div id="section-headers" class="tool-section hidden">
+                            <div class="section-head">
+                                <h2>Headers</h2>
+                                <p>The first 32 bytes, and a name when the signature is known.</p>
+                            </div>
+                            <div class="stack">
+                                <div class="file-line">
+                                    <label class="term-btn ghost file-pick" for="head-file">Choose file</label>
+                                    <span id="head-name" class="file-name">no file chosen</span>
+                                    <button type="button" class="term-btn" onclick="runHeaders()">Read</button>
+                                    <input id="head-file" class="visually-hidden" type="file">
+                                </div>
+                                <p id="head-error" class="err hidden"></p>
+                                <p id="head-kind" class="file-name"></p>
+                                <pre id="head-out" class="dump"></pre>
+                            </div>
+                        </div>
+
+                        <div id="section-strip" class="tool-section hidden">
+                            <div class="section-head">
+                                <h2>Strip</h2>
+                                <p>Re-encode a picture so the original metadata is left behind. Keep a locked original if you still need those bytes.</p>
+                            </div>
+                            <div class="stack" style="max-width: 720px;">
+                                <div>
+                                    <label class="label" for="strip-format">Format</label>
+                                    <select id="strip-format" onchange="syncStripQuality()">
+                                        <option value="image/jpeg">JPEG</option>
+                                        <option value="image/webp">WebP</option>
+                                        <option value="image/png">PNG</option>
+                                    </select>
+                                </div>
+                                <div id="strip-quality-wrap">
+                                    <div class="spread"><label class="label" for="strip-quality">Quality</label><span id="strip-quality-val">90%</span></div>
+                                    <input id="strip-quality" type="range" min="1" max="100" value="90">
+                                </div>
+                                <div class="file-line">
+                                    <label class="term-btn ghost file-pick" for="strip-file">Choose image</label>
+                                    <span id="strip-name" class="file-name">no file chosen</span>
+                                    <input id="strip-file" class="visually-hidden" type="file" accept="image/*">
+                                </div>
+                                <button type="button" class="term-btn" onclick="runStrip()">Strip and download</button>
+                                <p id="strip-error" class="err hidden"></p>
+                            </div>
+                        </div>
+
+                        <div id="section-json" class="tool-section hidden">
+                            <div class="section-head">
+                                <h2>JSON</h2>
+                                <p>Format or minify a pasted document.</p>
+                            </div>
+                            <div class="stack">
+                                <textarea id="json-input" placeholder="Paste JSON"></textarea>
+                                <div class="row">
+                                    <button type="button" class="term-btn" onclick="runJson('format')">Format</button>
+                                    <button type="button" class="term-btn ghost" onclick="runJson('minify')">Minify</button>
+                                </div>
+                                <p id="json-error" class="err hidden"></p>
+                                <textarea id="json-output" readonly placeholder="Result"></textarea>
+                            </div>
+                        </div>
+
+                        <div id="section-url" class="tool-section hidden">
+                            <div class="section-head">
+                                <h2>URL</h2>
+                                <p>Encode or decode a string for a query.</p>
+                            </div>
+                            <div class="stack">
+                                <textarea id="url-input" placeholder="Text"></textarea>
+                                <div class="row">
+                                    <button type="button" class="term-btn" onclick="runUrl('encode')">Encode</button>
+                                    <button type="button" class="term-btn ghost" onclick="runUrl('decode')">Decode</button>
+                                </div>
+                                <p id="url-error" class="err hidden"></p>
+                                <textarea id="url-output" readonly placeholder="Result"></textarea>
+                            </div>
+                        </div>
+
+                        <div id="section-uuid" class="tool-section hidden">
+                            <div class="section-head">
+                                <h2>UUID</h2>
+                                <p>A random id. It is not stored.</p>
+                            </div>
+                            <div class="stack" style="max-width: 720px;">
+                                <input id="uuid-out" class="pass-out" type="text" readonly value="ready">
+                                <div class="row">
+                                    <button type="button" class="term-btn" onclick="runUuid()">Generate</button>
+                                    <button type="button" class="term-btn ghost" onclick="copyUuid()">Copy</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="section-epoch" class="tool-section hidden">
+                            <div class="section-head">
+                                <h2>Epoch</h2>
+                                <p>Unix seconds and a local date, kept in step.</p>
+                            </div>
+                            <div class="stack" style="max-width: 720px;">
+                                <div>
+                                    <label class="label" for="epoch-unix">Unix seconds</label>
+                                    <input id="epoch-unix" type="text" inputmode="numeric" placeholder="0" oninput="epochFromUnix()">
+                                </div>
+                                <div>
+                                    <label class="label" for="epoch-local">Local time</label>
+                                    <input id="epoch-local" type="datetime-local" step="1" oninput="epochFromLocal()">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="section-image" class="tool-section hidden">
+                            <div class="section-head">
+                                <h2>Image</h2>
+                                <p>Convert, resize, and pack images on this machine.</p>
+                            </div>
+                            <div class="split">
+                                <div class="stack">
+                                    <div>
+                                        <label class="label" for="img-format">Target format</label>
+                                        <select id="img-format">
+                                            <option value="image/webp">WebP</option>
+                                            <option value="image/jpeg">JPG</option>
+                                            <option value="image/png">PNG</option>
+                                            <option value="image/gif">GIF</option>
+                                            <option value="application/pdf">PDF</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <div class="spread"><label class="label" for="img-quality">Quality</label><span id="quality-val">80%</span></div>
+                                        <input id="img-quality" type="range" min="1" max="100" value="80">
+                                    </div>
+                                    <div class="stack">
+                                        <label class="check"><input type="checkbox" id="resize-enable"> Resize</label>
+                                        <div id="resize-options" class="pair opacity-50 pointer-events-none">
+                                            <div>
+                                                <label class="label" for="img-width">Max width</label>
+                                                <input type="number" id="img-width" placeholder="px">
+                                            </div>
+                                            <div>
+                                                <label class="label" for="img-height">Max height</label>
+                                                <input type="number" id="img-height" placeholder="px">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="stack">
+                                    <label for="img-input" id="drop-zone" class="drop-zone">
+                                        <strong>Choose images</strong>
+                                        <span>or drop them here</span>
+                                        <input id="img-input" type="file" class="visually-hidden" multiple accept="image/*">
+                                    </label>
+                                    <div id="img-actions" class="bar hidden">
+                                        <span><span id="img-count">0</span> selected</span>
+                                        <div class="row">
+                                            <button type="button" class="term-btn ghost" onclick="clearImages()">Clear</button>
+                                            <button type="button" class="term-btn" onclick="processImages()"><span id="img-proc-btn-text">Convert</span></button>
+                                            <div id="img-spinner" class="hidden">...</div>
+                                        </div>
+                                    </div>
+                                    <div id="img-list" class="grid-cards"></div>
+                                    <div id="img-zip-container" class="zip-bar hidden">
+                                        <span>Ready.</span>
+                                        <button type="button" class="term-btn" onclick="downloadImageZip()">Download ZIP</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="section-pdf" class="tool-section hidden">
+                            <div class="section-head head-row">
+                                <div>
+                                    <h2>PDF</h2>
+                                    <p>Merge several files, or extract pages.</p>
+                                </div>
+                                <div class="seg-bar">
+                                    <button type="button" id="pdf-sub-merge" class="seg on" onclick="switchPdfMode('merge')">Merge</button>
+                                    <button type="button" id="pdf-sub-split" class="seg" onclick="switchPdfMode('split')">Split</button>
+                                </div>
+                            </div>
+                            <div id="pdf-merge-ui" class="stack">
+                                <label class="drop-zone">
+                                    <strong>Add PDF files</strong>
+                                    <input id="pdf-merge-input" type="file" class="visually-hidden" multiple accept="application/pdf">
+                                </label>
+                                <ul id="merge-list" class="stack"></ul>
+                                <div id="merge-list-container" class="row-end hidden">
+                                    <button type="button" id="btn-merge" class="term-btn" onclick="mergePdfs()">Merge and download</button>
+                                </div>
+                            </div>
+                            <div id="pdf-split-ui" class="stack hidden">
+                                <label class="drop-zone">
+                                    <strong>Choose a source PDF</strong>
+                                    <input id="pdf-split-input" class="visually-hidden" type="file" accept="application/pdf">
+                                    <span id="split-filename" class="file-name hidden"></span>
+                                </label>
+                                <div id="split-options" class="stack opacity-50 pointer-events-none">
+                                    <div>
+                                        <label class="label" for="split-ranges">Pages, such as 1, 3-5. Empty exports every page.</label>
+                                        <input id="split-ranges" type="text" placeholder="1, 3-5">
+                                    </div>
+                                    <button type="button" id="btn-split" class="term-btn" onclick="splitPdf()">Process PDF</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="section-text" class="tool-section hidden">
+                            <div class="section-head">
+                                <h2>Text</h2>
+                                <p>Case and counts, kept in this tab.</p>
+                            </div>
+                            <div class="stack">
+                                <textarea id="text-input" placeholder="Paste text"></textarea>
+                                <div class="bar">
+                                    <div class="row stat">
+                                        <span>Chars <b id="stat-char">0</b></span>
+                                        <span>Words <b id="stat-word">0</b></span>
+                                    </div>
+                                    <div class="row">
+                                        <button type="button" class="term-btn ghost" onclick="transformText('upper')">Upper</button>
+                                        <button type="button" class="term-btn ghost" onclick="transformText('lower')">Lower</button>
+                                        <button type="button" class="term-btn" onclick="copyText()">Copy</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="section-base64" class="tool-section hidden">
+                            <div class="section-head head-row">
+                                <div>
+                                    <h2>Base64</h2>
+                                    <p>Encode or decode text, or read an image as a data URL.</p>
+                                </div>
+                                <div class="seg-bar">
+                                    <button type="button" id="b64-sub-text" class="seg on" onclick="switchBase64Mode('text')">Text</button>
+                                    <button type="button" id="b64-sub-image" class="seg" onclick="switchBase64Mode('image')">Image</button>
+                                </div>
+                            </div>
+                            <div id="b64-text-ui" class="stack">
+                                <textarea id="b64-input" placeholder="Text to encode or decode"></textarea>
+                                <div class="row">
+                                    <button type="button" class="term-btn" onclick="processBase64('encode')">Encode</button>
+                                    <button type="button" class="term-btn ghost" onclick="processBase64('decode')">Decode</button>
+                                </div>
+                                <textarea id="b64-output" readonly placeholder="Result"></textarea>
+                            </div>
+                            <div id="b64-image-ui" class="stack hidden">
+                                <label class="term-btn ghost file-pick" for="b64-file">Choose image</label>
+                                <input type="file" id="b64-file" class="visually-hidden" accept="image/*">
+                                <textarea id="b64-img-output" readonly placeholder="Data URL"></textarea>
+                                <button type="button" class="term-btn" onclick="copyToClipboard('b64-img-output')">Copy string</button>
+                            </div>
+                        </div>
+
+                        <div id="section-units" class="tool-section hidden">
+                            <div class="section-head">
+                                <h2>Units</h2>
+                                <p>Length, weight, and storage.</p>
+                            </div>
+                            <div class="stack">
+                                <div>
+                                    <label class="label" for="unit-cat">Category</label>
+                                    <select id="unit-cat" onchange="renderUnitOptions()"></select>
+                                </div>
+                                <div class="unit-grid">
+                                    <div class="stack">
+                                        <label class="label" for="unit-val-from">From</label>
+                                        <input type="number" id="unit-val-from" value="1" oninput="convertUnits('from')">
+                                        <select id="unit-type-from" onchange="convertUnits('from')"></select>
+                                    </div>
+                                    <div class="unit-arrow">→</div>
+                                    <div class="stack">
+                                        <label class="label" for="unit-val-to">To</label>
+                                        <input type="number" id="unit-val-to" readonly>
+                                        <select id="unit-type-to" onchange="convertUnits('from')"></select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="section-qr" class="tool-section hidden">
+                            <div class="section-head">
+                                <h2>QR</h2>
+                                <p>Draw a code from text. Rendering stays local.</p>
+                            </div>
+                            <div class="qr-wrap">
+                                <div class="stack">
+                                    <div>
+                                        <label class="label" for="qr-text">Text</label>
+                                        <input id="qr-text" type="text" placeholder="text or url">
+                                    </div>
+                                    <div class="pair">
+                                        <div>
+                                            <label class="label" for="qr-fg">Foreground</label>
+                                            <input id="qr-fg" type="color" value="#000000">
+                                        </div>
+                                        <div>
+                                            <label class="label" for="qr-bg">Background</label>
+                                            <input id="qr-bg" type="color" value="#ffffff">
+                                        </div>
+                                    </div>
+                                    <button type="button" class="term-btn" onclick="generateQR()">Generate</button>
+                                </div>
+                                <div id="qr-output" class="qr-plate"></div>
+                            </div>
+                        </div>
+
+                        <div id="section-pass" class="tool-section hidden">
+                            <div class="section-head">
+                                <h2>Passphrase</h2>
+                                <p>A local random string for locking a file. It is not stored.</p>
+                            </div>
+                            <div class="stack" style="max-width: 640px;">
+                                <input id="pass-output" class="pass-out" type="text" readonly value="ready">
+                                <div>
+                                    <div class="spread"><label class="label" for="pass-len">Length</label><span id="pass-len-val">16</span></div>
+                                    <input id="pass-len" type="range" min="6" max="64" value="16">
+                                </div>
+                                <div class="row">
+                                    <button type="button" class="term-btn" onclick="generatePassword()">Generate</button>
+                                    <button type="button" class="term-btn ghost" onclick="copyPassword()">Copy</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="section-stopwatch" class="tool-section hidden">
+                            <div class="section-head">
+                                <h2>Stopwatch</h2>
+                                <p>Elapsed time on the local clock.</p>
+                            </div>
+                            <div class="sw-face"><div id="sw-display">00:00.00</div></div>
+                            <div class="sw-actions">
+                                <button type="button" id="sw-btn-toggle" class="term-btn is-run" onclick="toggleStopwatch()">Start</button>
+                                <button type="button" class="term-btn ghost" onclick="resetStopwatch()">Reset</button>
+                            </div>
+                        </div>
+
+                    </div>
+                    <div class="statusbar">
+                        <span id="win-status">AES-256-GCM · PBKDF2-SHA-256 · 100000 · a lost password cannot be recovered</span>
+                        <span id="flash"></span>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const moduleMeta = {
+            encrypt: { title: 'cipher — files', status: 'AES-256-GCM · PBKDF2-SHA-256 · 100000 · a lost password cannot be recovered' },
+            pass: { title: 'passphrase — generate', status: 'local random · not stored' },
+            checksum: { title: 'checksum — digest', status: 'sha-256 · sha-384 · sha-512 · local' },
+            hmac: { title: 'hmac — keyed digest', status: 'local key · nothing uploaded' },
+            match: { title: 'match — files', status: 'local compare · nothing uploaded' },
+            split: { title: 'split — parts', status: 'local parts · zip of ordered chunks' },
+            pack: { title: 'pack — zip', status: 'local archive · nothing uploaded' },
+            hex: { title: 'hex — view', status: 'first 4096 bytes · local' },
+            strings: { title: 'strings — extract', status: 'printable runs · local' },
+            entropy: { title: 'entropy — bytes', status: 'shannon · 0.00 to 8.00' },
+            headers: { title: 'headers — signature', status: 'first 32 bytes · local' },
+            image: { title: 'image — convert', status: 'local canvas · nothing uploaded' },
+            pdf: { title: 'pdf — merge / split', status: 'local document · nothing uploaded' },
+            strip: { title: 'strip — metadata', status: 're-encode · metadata left behind' },
+            text: { title: 'text — case', status: 'local buffer' },
+            base64: { title: 'base64 — encode', status: 'local encode / decode' },
+            json: { title: 'json — format', status: 'local parse' },
+            url: { title: 'url — codec', status: 'local encode / decode' },
+            uuid: { title: 'uuid — random', status: 'local random · not stored' },
+            epoch: { title: 'epoch — time', status: 'unix seconds · local clock' },
+            units: { title: 'units — convert', status: 'length · weight · storage' },
+            qr: { title: 'qr — generate', status: 'local render' },
+            stopwatch: { title: 'timer — elapsed', status: 'local clock' }
+        };
+
+        function tickClock() {
+            document.getElementById('sys-clock').textContent = new Date().toLocaleTimeString([], { hour12: false });
+        }
+
+        function flash(msg) {
+            const el = document.getElementById('flash');
+            el.textContent = msg;
+            clearTimeout(flash._t);
+            flash._t = setTimeout(() => { el.textContent = ''; }, 1800);
+        }
+
+        function switchTab(tab) {
+            document.querySelectorAll('.tool-section').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
+
+            document.getElementById(`tab-btn-${tab}`).classList.add('active');
+            document.getElementById(`section-${tab}`).classList.remove('hidden');
+
+            const meta = moduleMeta[tab];
+            document.getElementById('win-title').textContent = meta.title;
+            document.getElementById('win-status').textContent = meta.status;
+            focusCipherPane();
+        }
+
+        function downloadFile(blob, fileName) {
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = fileName;
+            document.body.append(link);
+            link.click();
+            link.remove();
+            setTimeout(() => URL.revokeObjectURL(link.href), 7000);
+        }
+
+        let cryptMode = 'enc';
+
+        function focusCipherPane() {
+            document.getElementById('pane-seal').classList.toggle('focused', cryptMode !== 'dec');
+            document.getElementById('pane-open').classList.toggle('focused', cryptMode === 'dec');
+        }
+
+        function setCryptMode(mode) {
+            cryptMode = mode;
+            focusCipherPane();
+        }
+
+        async function deriveKey(password, salt, usages) {
+            const keyMaterial = await crypto.subtle.importKey(
+                'raw',
+                new TextEncoder().encode(password),
+                'PBKDF2',
+                false,
+                ['deriveKey']
+            );
+            return crypto.subtle.deriveKey(
+                { name: 'PBKDF2', salt: salt, iterations: 100000, hash: 'SHA-256' },
+                keyMaterial,
+                { name: 'AES-GCM', length: 256 },
+                false,
+                usages
+            );
+        }
+
+        async function encryptBuffer(fileData, password) {
+            const salt = crypto.getRandomValues(new Uint8Array(16));
+            const iv = crypto.getRandomValues(new Uint8Array(12));
+            const key = await deriveKey(password, salt, ['encrypt']);
+            const encryptedContent = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, key, fileData);
+            return new Blob([salt, iv, encryptedContent], { type: 'application/octet-stream' });
+        }
+
+        async function decryptBuffer(fileData, password) {
+            const salt = fileData.slice(0, 16);
+            const iv = fileData.slice(16, 28);
+            const data = fileData.slice(28);
+            const key = await deriveKey(password, salt, ['decrypt']);
+            return crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv }, key, data);
+        }
+
+        async function processCrypto(mode) {
+            mode = mode || cryptMode;
+            const isEnc = mode === 'enc';
+            const fileInput = document.getElementById(isEnc ? 'seal-file' : 'open-file');
+            const passInput = document.getElementById(isEnc ? 'seal-pass' : 'open-pass');
+            const errorMsg = document.getElementById(isEnc ? 'seal-error' : 'open-error');
+            const btn = document.getElementById(isEnc ? 'seal-btn' : 'open-btn');
+            const idle = isEnc ? 'Encrypt file' : 'Decrypt file';
+            errorMsg.classList.add('hidden');
+
+            if (!fileInput.files[0] || !passInput.value) {
+                errorMsg.textContent = 'Select a file and enter a password.';
+                errorMsg.classList.remove('hidden');
+                return;
+            }
+
+            const file = fileInput.files[0];
+            const password = passInput.value;
+            btn.textContent = 'Processing...';
+            btn.disabled = true;
+
+            try {
+                if (isEnc) {
+                    const blob = await encryptBuffer(await file.arrayBuffer(), password);
+                    downloadFile(blob, file.name + '.enc');
+                    flash('sealed ' + file.name + '.enc');
+                } else {
+                    try {
+                        const decryptedContent = await decryptBuffer(await file.arrayBuffer(), password);
+                        const originalName = file.name.replace('.enc', '');
+                        downloadFile(new Blob([decryptedContent], { type: 'application/octet-stream' }), originalName);
+                        flash('opened ' + originalName);
+                    } catch (e) {
+                        throw new Error('Incorrect password or corrupted file.');
+                    }
+                }
+            } catch (err) {
+                errorMsg.textContent = err.message;
+                errorMsg.classList.remove('hidden');
+            } finally {
+                btn.textContent = idle;
+                btn.disabled = false;
+            }
+        }
+
+        function bindFileName(inputId, labelId) {
+            document.getElementById(inputId).addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                document.getElementById(labelId).textContent = file ? file.name : 'no file chosen';
+            });
+        }
+
+        function bindDrop(zoneId, inputId, labelId, mode) {
+            const zone = document.getElementById(zoneId);
+            const input = document.getElementById(inputId);
+            ['dragenter', 'dragover'].forEach(ev => zone.addEventListener(ev, (e) => {
+                e.preventDefault();
+                zone.classList.add('drag');
+            }));
+            ['dragleave', 'drop'].forEach(ev => zone.addEventListener(ev, (e) => {
+                e.preventDefault();
+                zone.classList.remove('drag');
+            }));
+            zone.addEventListener('drop', (e) => {
+                const file = e.dataTransfer.files[0];
+                if (!file) return;
+                const dt = new DataTransfer();
+                dt.items.add(file);
+                input.files = dt.files;
+                document.getElementById(labelId).textContent = file.name;
+                setCryptMode(mode);
+            });
+        }
+
+        bindFileName('seal-file', 'seal-name');
+        bindFileName('open-file', 'open-name');
+        bindFileName('sum-file', 'sum-name');
+        bindFileName('hmac-file', 'hmac-name');
+        bindFileName('split-file', 'split-name');
+        bindFileName('head-file', 'head-name');
+        bindFileName('strip-file', 'strip-name');
+        bindFileName('match-a', 'match-a-name');
+        bindFileName('match-b', 'match-b-name');
+        bindFileName('hex-file', 'hex-name');
+        bindFileName('str-file', 'str-name');
+        bindFileName('ent-file', 'ent-name');
+        bindDrop('pane-seal', 'seal-file', 'seal-name', 'enc');
+        bindDrop('pane-open', 'open-file', 'open-name', 'dec');
+        document.getElementById('pane-seal').addEventListener('focusin', () => setCryptMode('enc'));
+        document.getElementById('pane-open').addEventListener('focusin', () => setCryptMode('dec'));
+
+        const unitData = {
+            length: { m: 1, km: 1000, cm: 0.01, mm: 0.001, mi: 1609.34, yd: 0.9144, ft: 0.3048, in: 0.0254 },
+            weight: { kg: 1, g: 0.001, mg: 0.000001, lb: 0.453592, oz: 0.0283495 },
+            storage: { b: 1, kb: 1024, mb: 1048576, gb: 1073741824, tb: 1099511627776 }
+        };
+
+        function renderUnitOptions() {
+            const cat = document.getElementById('unit-cat');
+            if (cat.options.length === 0) {
+                Object.keys(unitData).forEach(k => cat.add(new Option(k.toUpperCase(), k)));
+            }
+            const type = cat.value;
+            const s1 = document.getElementById('unit-type-from');
+            const s2 = document.getElementById('unit-type-to');
+            s1.innerHTML = '';
+            s2.innerHTML = '';
+            Object.keys(unitData[type]).forEach(u => {
+                s1.add(new Option(u, u));
+                s2.add(new Option(u, u));
+            });
+            s2.selectedIndex = 1;
+            convertUnits('from');
+        }
+
+        function convertUnits() {
+            const cat = document.getElementById('unit-cat').value;
+            const rates = unitData[cat];
+            const from = document.getElementById('unit-type-from').value;
+            const to = document.getElementById('unit-type-to').value;
+            const valFrom = document.getElementById('unit-val-from');
+            const valTo = document.getElementById('unit-val-to');
+            const val = parseFloat(valFrom.value);
+            const base = val * rates[from];
+            const result = base / rates[to];
+            valTo.value = Number.isInteger(result) ? result : result.toFixed(4).replace(/\.?0+$/, '');
+        }
+
+        function switchBase64Mode(m) {
+            document.getElementById('b64-text-ui').className = m === 'text' ? 'stack' : 'hidden';
+            document.getElementById('b64-image-ui').className = m === 'image' ? 'stack' : 'hidden';
+            document.getElementById('b64-sub-text').className = m === 'text' ? 'seg on' : 'seg';
+            document.getElementById('b64-sub-image').className = m === 'image' ? 'seg on' : 'seg';
+        }
+
+        function processBase64(action) {
+            const input = document.getElementById('b64-input').value;
+            const out = document.getElementById('b64-output');
+            try {
+                if (action === 'encode') out.value = btoa(input);
+                else out.value = atob(input);
+            } catch (e) {
+                out.value = 'Error: Invalid Base64 string';
+            }
+        }
+
+        document.getElementById('b64-file').addEventListener('change', (e) => {
+            if (e.target.files[0]) {
+                const reader = new FileReader();
+                reader.onload = (evt) => { document.getElementById('b64-img-output').value = evt.target.result; };
+                reader.readAsDataURL(e.target.files[0]);
+            }
+        });
+
+        function copyFrom(el) {
+            el.select();
+            document.execCommand('copy');
+            flash('copied');
+        }
+
+        function copyToClipboard(id) { copyFrom(document.getElementById(id)); }
+
+        function esc(s) {
+            return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+
+        let imageFiles = [];
+        let processedImages = [];
+
+        document.getElementById('img-input').addEventListener('change', (e) => {
+            imageFiles = [...imageFiles, ...e.target.files];
+            renderImages();
+        });
+
+        const dropZone = document.getElementById('drop-zone');
+        ['dragenter', 'dragover'].forEach(ev => dropZone.addEventListener(ev, (e) => {
+            e.preventDefault();
+            dropZone.classList.add('drag');
+        }));
+        ['dragleave', 'drop'].forEach(ev => dropZone.addEventListener(ev, (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag');
+        }));
+        dropZone.addEventListener('drop', (e) => {
+            const files = [...e.dataTransfer.files].filter(f => f.type.startsWith('image/'));
+            imageFiles = [...imageFiles, ...files];
+            renderImages();
+        });
+
+        document.getElementById('resize-enable').addEventListener('change', (e) => {
+            const box = document.getElementById('resize-options');
+            box.classList.toggle('opacity-50', !e.target.checked);
+            box.classList.toggle('pointer-events-none', !e.target.checked);
+        });
+        document.getElementById('img-quality').addEventListener('input', (e) => {
+            document.getElementById('quality-val').textContent = e.target.value + '%';
+        });
+
+        function renderImages() {
+            const list = document.getElementById('img-list');
+            list.innerHTML = '';
+            imageFiles.forEach((f, i) => {
+                list.innerHTML += `<div class="file-chip"><button type="button" onclick="imageFiles.splice(${i},1);renderImages()">x</button><div>${esc(f.name)}</div><div id="stat-${i}">Ready</div></div>`;
+            });
+            document.getElementById('img-actions').classList.toggle('hidden', imageFiles.length === 0);
+            document.getElementById('img-count').textContent = imageFiles.length;
+            if (imageFiles.length === 0) document.getElementById('img-zip-container').classList.add('hidden');
+        }
+
+        function clearImages() {
+            imageFiles = [];
+            renderImages();
+        }
+
+        async function processImages() {
+            const fmt = document.getElementById('img-format').value;
+            const q = parseInt(document.getElementById('img-quality').value, 10) / 100;
+            const btn = document.getElementById('img-proc-btn-text');
+            const spin = document.getElementById('img-spinner');
+            btn.textContent = 'Processing...';
+            spin.classList.remove('hidden');
+            processedImages = [];
+            const resizeOn = document.getElementById('resize-enable').checked;
+            const mw = resizeOn ? parseInt(document.getElementById('img-width').value, 10) || 0 : 0;
+            const mh = resizeOn ? parseInt(document.getElementById('img-height').value, 10) || 0 : 0;
+
+            for (let i = 0; i < imageFiles.length; i++) {
+                const f = imageFiles[i];
+                document.getElementById(`stat-${i}`).textContent = 'Converting...';
+                try {
+                    let blob;
+                    if (fmt === 'application/pdf') {
+                        const png = await convImg(f, 'image/png', 1, mw, mh);
+                        const pdf = await PDFLib.PDFDocument.create();
+                        const img = await pdf.embedPng(await png.arrayBuffer());
+                        pdf.addPage([img.width, img.height]).drawImage(img, { x: 0, y: 0, width: img.width, height: img.height });
+                        blob = new Blob([await pdf.save()], { type: 'application/pdf' });
+                    } else {
+                        blob = await convImg(f, fmt, q, mw, mh);
+                    }
+                    const ext = fmt === 'application/pdf' ? '.pdf'
+                        : fmt === 'image/webp' ? '.webp'
+                        : fmt === 'image/png' ? '.png'
+                        : fmt === 'image/gif' ? '.gif'
+                        : '.jpg';
+                    processedImages.push({ name: f.name.split('.')[0] + ext, blob: blob });
+                    document.getElementById(`stat-${i}`).innerHTML = '<span style="color:#39ff6a">Done</span>';
+                } catch (e) {
+                    document.getElementById(`stat-${i}`).textContent = 'Failed';
+                }
+            }
+            btn.textContent = 'Convert';
+            spin.classList.add('hidden');
+            if (processedImages.length > 0) document.getElementById('img-zip-container').classList.remove('hidden');
+        }
+
+        function convImg(f, fmt, q, mw, mh) {
+            return new Promise((res, rej) => {
+                const img = new Image();
+                img.onload = () => {
+                    let w = img.width, h = img.height;
+                    if (mw > 0 && w > mw) { h *= mw / w; w = mw; }
+                    if (mh > 0 && h > mh) { w *= mh / h; h = mh; }
+                    const c = document.createElement('canvas');
+                    c.width = w;
+                    c.height = h;
+                    c.getContext('2d').drawImage(img, 0, 0, w, h);
+                    c.toBlob(b => b ? res(b) : rej(), fmt, q);
+                };
+                img.onerror = rej;
+                img.src = URL.createObjectURL(f);
+            });
+        }
+
+        function downloadImageZip() {
+            const z = new JSZip();
+            processedImages.forEach(p => z.file(p.name, p.blob));
+            z.generateAsync({ type: 'blob', compression: 'DEFLATE', mimeType: 'application/zip' }).then(c => downloadFile(c, 'images.zip'));
+        }
+
+        let mergeFiles = [];
+        let splitFile = null;
+
+        function switchPdfMode(m) {
+            document.getElementById('pdf-merge-ui').className = m === 'merge' ? 'stack' : 'hidden';
+            document.getElementById('pdf-split-ui').className = m === 'split' ? 'stack' : 'hidden';
+            document.getElementById('pdf-sub-merge').className = m === 'merge' ? 'seg on' : 'seg';
+            document.getElementById('pdf-sub-split').className = m === 'split' ? 'seg on' : 'seg';
+        }
+
+        document.getElementById('pdf-merge-input').addEventListener('change', (e) => {
+            mergeFiles = [...mergeFiles, ...e.target.files];
+            renderMergeList();
+        });
+
+        function renderMergeList() {
+            const list = document.getElementById('merge-list');
+            list.innerHTML = '';
+            mergeFiles.forEach((f, i) => {
+                list.innerHTML += `<li class="file-row"><span>${esc(f.name)}</span><button type="button" onclick="mergeFiles.splice(${i},1);renderMergeList()">x</button></li>`;
+            });
+            document.getElementById('merge-list-container').classList.toggle('hidden', mergeFiles.length < 1);
+        }
+
+        async function mergePdfs() {
+            const btn = document.getElementById('btn-merge');
+            btn.disabled = true;
+            const doc = await PDFLib.PDFDocument.create();
+            for (let f of mergeFiles) {
+                const p = await PDFLib.PDFDocument.load(await f.arrayBuffer());
+                (await doc.copyPages(p, p.getPageIndices())).forEach(pg => doc.addPage(pg));
+            }
+            downloadFile(new Blob([await doc.save()], { type: 'application/pdf' }), 'merged.pdf');
+            btn.disabled = false;
+            flash('merged.pdf');
+        }
+
+        document.getElementById('pdf-split-input').addEventListener('change', (e) => {
+            splitFile = e.target.files[0];
+            const name = document.getElementById('split-filename');
+            name.textContent = splitFile.name;
+            name.classList.remove('hidden');
+            document.getElementById('split-options').classList.remove('opacity-50', 'pointer-events-none');
+        });
+
+        async function splitPdf() {
+            const rng = document.getElementById('split-ranges').value;
+            const src = await PDFLib.PDFDocument.load(await splitFile.arrayBuffer());
+            let idxs = [];
+            if (!rng) idxs = [...Array(src.getPageCount()).keys()];
+            else rng.split(',').forEach(p => {
+                if (p.includes('-')) {
+                    const [s, e] = p.split('-');
+                    for (let i = parseInt(s, 10); i <= parseInt(e, 10); i++) idxs.push(i - 1);
+                } else idxs.push(parseInt(p, 10) - 1);
+            });
+            if (rng) {
+                const newDoc = await PDFLib.PDFDocument.create();
+                (await newDoc.copyPages(src, idxs)).forEach(p => newDoc.addPage(p));
+                downloadFile(new Blob([await newDoc.save()], { type: 'application/pdf' }), 'split.pdf');
+            } else {
+                const z = new JSZip();
+                for (let i of idxs) {
+                    const d = await PDFLib.PDFDocument.create();
+                    const [p] = await d.copyPages(src, [i]);
+                    d.addPage(p);
+                    z.file(`page_${i + 1}.pdf`, await d.save());
+                }
+                z.generateAsync({ type: 'blob', compression: 'DEFLATE', mimeType: 'application/zip' }).then(c => downloadFile(c, 'split_pages.zip'));
+            }
+        }
+
+        document.getElementById('text-input').addEventListener('input', (e) => {
+            document.getElementById('stat-char').textContent = e.target.value.length;
+            document.getElementById('stat-word').textContent = e.target.value.trim() === '' ? 0 : e.target.value.trim().split(/\s+/).length;
+        });
+
+        function transformText(t) {
+            const el = document.getElementById('text-input');
+            if (t === 'upper') el.value = el.value.toUpperCase();
+            if (t === 'lower') el.value = el.value.toLowerCase();
+            el.dispatchEvent(new Event('input'));
+        }
+
+        function copyText() { copyFrom(document.getElementById('text-input')); }
+
+        function generateQR() {
+            const t = document.getElementById('qr-text').value;
+            const fg = document.getElementById('qr-fg').value;
+            const bg = document.getElementById('qr-bg').value;
+            const c = document.getElementById('qr-output');
+            c.innerHTML = '';
+            if (t) new QRCode(c, { text: t, width: 150, height: 150, colorDark: fg, colorLight: bg });
+        }
+
+        function generatePassword() {
+            const len = document.getElementById('pass-len').value;
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
+            let p = '';
+            for (let i = 0; i < len; i++) p += chars.charAt(Math.floor(Math.random() * chars.length));
+            document.getElementById('pass-output').value = p;
+        }
+
+        document.getElementById('pass-len').addEventListener('input', (e) => {
+            document.getElementById('pass-len-val').textContent = e.target.value;
+        });
+
+        function copyPassword() { copyFrom(document.getElementById('pass-output')); }
+
+        let swInt, swStart, swElapsed = 0;
+
+        function paintStopwatch(ms) {
+            const d = new Date(ms);
+            document.getElementById('sw-display').textContent = d.toISOString().slice(14, 22);
+        }
+
+        function toggleStopwatch() {
+            const btn = document.getElementById('sw-btn-toggle');
+            if (btn.textContent === 'Start') {
+                swStart = Date.now();
+                swInt = setInterval(() => paintStopwatch(swElapsed + (Date.now() - swStart)), 10);
+                btn.textContent = 'Stop';
+                btn.classList.add('is-halt');
+                btn.classList.remove('is-run');
+            } else {
+                clearInterval(swInt);
+                swElapsed += Date.now() - swStart;
+                btn.textContent = 'Start';
+                btn.classList.add('is-run');
+                btn.classList.remove('is-halt');
+            }
+        }
+
+        function resetStopwatch() {
+            clearInterval(swInt);
+            swElapsed = 0;
+            document.getElementById('sw-display').textContent = '00:00.00';
+            const btn = document.getElementById('sw-btn-toggle');
+            btn.textContent = 'Start';
+            btn.classList.add('is-run');
+            btn.classList.remove('is-halt');
+        }
+
+        function bytesToHex(bytes) {
+            return [...bytes].map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        async function digestHex(name, buffer) {
+            const hash = await crypto.subtle.digest(name, buffer);
+            return bytesToHex(new Uint8Array(hash));
+        }
+
+        function labelChecksum() {
+            document.getElementById('sum-out-label').textContent = document.getElementById('sum-alg').value;
+        }
+
+        function showNeed(id, message) {
+            const el = document.getElementById(id);
+            el.textContent = message;
+            el.classList.remove('hidden');
+        }
+
+        async function runChecksum() {
+            const file = document.getElementById('sum-file').files[0];
+            const err = document.getElementById('sum-error');
+            err.classList.add('hidden');
+            if (!file) {
+                showNeed('sum-error', 'Select a file.');
+                return;
+            }
+            document.getElementById('sum-out').value = await digestHex(document.getElementById('sum-alg').value, await file.arrayBuffer());
+            compareChecksum();
+        }
+
+        function compareChecksum() {
+            const got = document.getElementById('sum-out').value.trim().toLowerCase();
+            const expect = document.getElementById('sum-expect').value.trim().toLowerCase().replace(/\s+/g, '');
+            const note = document.getElementById('sum-note');
+            if (!got || !expect) {
+                note.textContent = '';
+                note.className = 'file-name';
+                return;
+            }
+            const same = got === expect;
+            note.textContent = same ? 'match' : 'mismatch';
+            note.className = same ? 'file-name' : 'err';
+        }
+
+        function copyChecksum() {
+            const el = document.getElementById('sum-out');
+            if (!el.value) {
+                showNeed('sum-error', 'Hash a file first.');
+                return;
+            }
+            document.getElementById('sum-error').classList.add('hidden');
+            copyFrom(el);
+        }
+
+        async function runMatch() {
+            const a = document.getElementById('match-a').files[0];
+            const b = document.getElementById('match-b').files[0];
+            const err = document.getElementById('match-error');
+            err.classList.add('hidden');
+            if (!a || !b) {
+                showNeed('match-error', 'Select both files.');
+                return;
+            }
+            const ha = await digestHex('SHA-256', await a.arrayBuffer());
+            const hb = await digestHex('SHA-256', await b.arrayBuffer());
+            document.getElementById('match-a-hash').textContent = ha;
+            document.getElementById('match-b-hash').textContent = hb;
+            const verdict = document.getElementById('match-verdict');
+            const same = ha === hb;
+            verdict.textContent = same ? 'same bytes' : 'different bytes';
+            verdict.className = same ? 'file-name' : 'err';
+        }
+
+        async function runHex() {
+            const file = document.getElementById('hex-file').files[0];
+            document.getElementById('hex-error').classList.add('hidden');
+            if (!file) {
+                showNeed('hex-error', 'Select a file.');
+                return;
+            }
+            const cap = 4096;
+            const bytes = new Uint8Array(await file.slice(0, cap).arrayBuffer());
+            const lines = [];
+            for (let i = 0; i < bytes.length; i += 16) {
+                const chunk = bytes.subarray(i, i + 16);
+                const hex = [...chunk].map(b => b.toString(16).padStart(2, '0')).join(' ');
+                const ascii = [...chunk].map(b => (b >= 32 && b <= 126) ? String.fromCharCode(b) : '.').join('');
+                lines.push(i.toString(16).padStart(8, '0') + '  ' + hex.padEnd(47, ' ') + '  ' + ascii);
+            }
+            document.getElementById('hex-out').textContent = lines.join('\n') || '(empty)';
+            document.getElementById('hex-note').textContent = file.size > cap
+                ? 'showing first 4096 of ' + file.size + ' bytes'
+                : file.size + ' bytes';
+        }
+
+        async function runStrings() {
+            const file = document.getElementById('str-file').files[0];
+            document.getElementById('str-error').classList.add('hidden');
+            if (!file) {
+                showNeed('str-error', 'Select a file.');
+                return;
+            }
+            const capBytes = 1024 * 1024;
+            const capStrings = 400;
+            const bytes = new Uint8Array(await file.slice(0, capBytes).arrayBuffer());
+            const found = [];
+            let run = '';
+            const flush = () => {
+                if (run.length >= 4 && found.length < capStrings) found.push(run);
+                run = '';
+            };
+            for (let i = 0; i < bytes.length; i++) {
+                if (found.length >= capStrings) break;
+                const b = bytes[i];
+                if (b >= 32 && b <= 126) run += String.fromCharCode(b);
+                else flush();
+            }
+            flush();
+            document.getElementById('str-out').textContent = found.length ? found.join('\n') : '(none)';
+            let note = found.length + (found.length === 1 ? ' string' : ' strings');
+            if (file.size > capBytes) note += ' · scanned first ' + capBytes + ' of ' + file.size + ' bytes';
+            if (found.length >= capStrings) note += ' · list capped';
+            document.getElementById('str-note').textContent = note;
+        }
+
+        function shannon(bytes) {
+            if (!bytes.length) return 0;
+            const freq = new Uint32Array(256);
+            for (const b of bytes) freq[b]++;
+            let h = 0;
+            for (let i = 0; i < 256; i++) {
+                if (!freq[i]) continue;
+                const p = freq[i] / bytes.length;
+                h -= p * Math.log2(p);
+            }
+            return h;
+        }
+
+        function entropyReading(h) {
+            if (h < 3) return 'low';
+            if (h < 6) return 'mixed';
+            return 'high';
+        }
+
+        async function runEntropy() {
+            const file = document.getElementById('ent-file').files[0];
+            document.getElementById('ent-error').classList.add('hidden');
+            if (!file) {
+                showNeed('ent-error', 'Select a file.');
+                return;
+            }
+            const h = shannon(new Uint8Array(await file.arrayBuffer()));
+            document.getElementById('ent-value').textContent = h.toFixed(2);
+            document.getElementById('ent-read').textContent = entropyReading(h);
+        }
+
+        async function hmacHex(name, keyText, buffer) {
+            const key = await crypto.subtle.importKey(
+                'raw',
+                new TextEncoder().encode(keyText),
+                { name: 'HMAC', hash: name },
+                false,
+                ['sign']
+            );
+            const sig = await crypto.subtle.sign('HMAC', key, buffer);
+            return bytesToHex(new Uint8Array(sig));
+        }
+
+        async function runHmac() {
+            const file = document.getElementById('hmac-file').files[0];
+            const keyText = document.getElementById('hmac-key').value;
+            const err = document.getElementById('hmac-error');
+            err.classList.add('hidden');
+            if (!file || !keyText) {
+                showNeed('hmac-error', 'Select a file and enter a key.');
+                return;
+            }
+            document.getElementById('hmac-out').value = await hmacHex(
+                document.getElementById('hmac-alg').value,
+                keyText,
+                await file.arrayBuffer()
+            );
+        }
+
+        function copyHmac() {
+            const el = document.getElementById('hmac-out');
+            if (!el.value) {
+                showNeed('hmac-error', 'Sign a file first.');
+                return;
+            }
+            document.getElementById('hmac-error').classList.add('hidden');
+            copyFrom(el);
+        }
+
+        function switchSplitMode(m) {
+            document.getElementById('split-cut-ui').className = m === 'cut' ? 'stack' : 'hidden';
+            document.getElementById('split-join-ui').className = m === 'join' ? 'stack' : 'hidden';
+            document.getElementById('split-sub-cut').className = m === 'cut' ? 'seg on' : 'seg';
+            document.getElementById('split-sub-join').className = m === 'join' ? 'seg on' : 'seg';
+        }
+
+        async function runSplit() {
+            const file = document.getElementById('split-file').files[0];
+            const size = parseInt(document.getElementById('split-size').value, 10);
+            document.getElementById('split-error').classList.add('hidden');
+            if (!file) {
+                showNeed('split-error', 'Select a file.');
+                return;
+            }
+            if (!size || size < 1) {
+                showNeed('split-error', 'Enter a chunk size of at least 1 byte.');
+                return;
+            }
+            const buf = new Uint8Array(await file.arrayBuffer());
+            const zip = new JSZip();
+            let parts = 0;
+            if (buf.length === 0) {
+                zip.file('part-0001', new Uint8Array());
+                parts = 1;
+            } else {
+                for (let i = 0; i < buf.length; i += size) {
+                    parts += 1;
+                    zip.file('part-' + String(parts).padStart(4, '0'), buf.subarray(i, i + size));
+                }
+            }
+            zip.file('manifest.json', JSON.stringify({ name: file.name, size: file.size, parts: parts, chunk: size }));
+            const blob = await zip.generateAsync({ type: 'blob' });
+            const base = file.name.replace(/\.[^.]+$/, '') || file.name;
+            downloadFile(blob, base + '.parts.zip');
+            flash(parts + ' parts');
+        }
+
+        async function partsFromZip(zip) {
+            const manifestFile = zip.file('manifest.json');
+            let name = '';
+            if (manifestFile) {
+                try {
+                    const meta = JSON.parse(await manifestFile.async('string'));
+                    if (meta && meta.name) name = meta.name;
+                } catch (e) { name = ''; }
+            }
+            const names = Object.keys(zip.files).filter(n => /^part-\d+/.test(n) && !zip.files[n].dir).sort();
+            const chunks = [];
+            for (const n of names) chunks.push(new Uint8Array(await zip.file(n).async('uint8array')));
+            return { name, chunks };
+        }
+
+        async function runJoin() {
+            const files = [...document.getElementById('join-files').files];
+            document.getElementById('join-error').classList.add('hidden');
+            if (!files.length) {
+                showNeed('join-error', 'Select the parts.');
+                return;
+            }
+            const chunks = [];
+            let originalName = '';
+            const loose = [];
+            for (const file of files) {
+                if (file.name === 'manifest.json') {
+                    try {
+                        const meta = JSON.parse(await file.text());
+                        if (meta && meta.name) originalName = meta.name;
+                    } catch (e) { /* keep going */ }
+                    continue;
+                }
+                let packed = null;
+                try {
+                    const zip = await JSZip.loadAsync(await file.arrayBuffer());
+                    if (zip.file('manifest.json')) packed = await partsFromZip(zip);
+                } catch (e) { packed = null; }
+                if (packed && packed.chunks.length) {
+                    if (packed.name) originalName = packed.name;
+                    chunks.push(...packed.chunks);
+                } else {
+                    loose.push(file);
+                }
+            }
+            loose.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+            for (const file of loose) chunks.push(new Uint8Array(await file.arrayBuffer()));
+            const total = chunks.reduce((sum, c) => sum + c.length, 0);
+            const out = new Uint8Array(total);
+            let offset = 0;
+            for (const chunk of chunks) {
+                out.set(chunk, offset);
+                offset += chunk.length;
+            }
+            downloadFile(new Blob([out]), originalName || 'joined.bin');
+            flash(originalName || 'joined.bin');
+        }
+
+        function renderPackList() {
+            const list = document.getElementById('pack-list');
+            const files = [...document.getElementById('pack-files').files];
+            list.innerHTML = '';
+            files.forEach(f => { list.innerHTML += `<li class="file-row"><span>${esc(f.name)}</span></li>`; });
+            document.getElementById('pack-name').textContent = files.length ? files.length + ' files' : 'no files chosen';
+        }
+
+        document.getElementById('pack-files').addEventListener('change', renderPackList);
+        document.getElementById('join-files').addEventListener('change', () => {
+            const n = document.getElementById('join-files').files.length;
+            document.getElementById('join-name').textContent = n ? n + ' files' : 'no files chosen';
+        });
+
+        async function runPack() {
+            const files = [...document.getElementById('pack-files').files];
+            document.getElementById('pack-error').classList.add('hidden');
+            if (!files.length) {
+                showNeed('pack-error', 'Select files.');
+                return;
+            }
+            const zip = new JSZip();
+            const used = new Set();
+            for (const file of files) {
+                let name = file.name;
+                let n = 2;
+                const dot = file.name.lastIndexOf('.');
+                const stem = dot > 0 ? file.name.slice(0, dot) : file.name;
+                const ext = dot > 0 ? file.name.slice(dot) : '';
+                while (used.has(name)) {
+                    name = stem + '-' + n + ext;
+                    n += 1;
+                }
+                used.add(name);
+                zip.file(name, await file.arrayBuffer());
+            }
+            downloadFile(await zip.generateAsync({ type: 'blob' }), 'archive.zip');
+            flash('archive.zip');
+        }
+
+        const headerSignatures = [
+            { name: 'PNG', bytes: [0x89, 0x50, 0x4E, 0x47] },
+            { name: 'JPEG', bytes: [0xFF, 0xD8, 0xFF] },
+            { name: 'GIF', bytes: [0x47, 0x49, 0x46, 0x38] },
+            { name: 'WEBP', test: (b) => b.length >= 12 && b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50 },
+            { name: 'WAV', test: (b) => b.length >= 12 && b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x41 && b[10] === 0x56 && b[11] === 0x45 },
+            { name: 'PDF', bytes: [0x25, 0x50, 0x44, 0x46] },
+            { name: 'ZIP', bytes: [0x50, 0x4B, 0x03, 0x04] },
+            { name: 'GZIP', bytes: [0x1F, 0x8B] },
+            { name: 'MP4', test: (b) => b.length >= 12 && b[4] === 0x66 && b[5] === 0x74 && b[6] === 0x79 && b[7] === 0x70 },
+            { name: 'ELF', bytes: [0x7F, 0x45, 0x4C, 0x46] },
+            { name: 'MP3', test: (b) => b.length >= 3 && ((b[0] === 0x49 && b[1] === 0x44 && b[2] === 0x33) || (b[0] === 0xFF && (b[1] & 0xE0) === 0xE0)) },
+            { name: 'PE', bytes: [0x4D, 0x5A] }
+        ];
+
+        function matchHeader(bytes) {
+            for (const sig of headerSignatures) {
+                if (sig.bytes && sig.bytes.every((v, i) => bytes[i] === v)) return sig.name;
+                if (sig.test && sig.test(bytes)) return sig.name;
+            }
+            return 'unknown';
+        }
+
+        async function runHeaders() {
+            const file = document.getElementById('head-file').files[0];
+            document.getElementById('head-error').classList.add('hidden');
+            if (!file) {
+                showNeed('head-error', 'Select a file.');
+                return;
+            }
+            const bytes = new Uint8Array(await file.slice(0, 32).arrayBuffer());
+            const hex = bytesToHex(bytes).replace(/(.{2})/g, '$1 ').trim();
+            document.getElementById('head-out').textContent = hex || '(empty)';
+            document.getElementById('head-kind').textContent = matchHeader(bytes);
+        }
+
+        function syncStripQuality() {
+            const png = document.getElementById('strip-format').value === 'image/png';
+            document.getElementById('strip-quality-wrap').classList.toggle('opacity-50', png);
+            document.getElementById('strip-quality-wrap').classList.toggle('pointer-events-none', png);
+        }
+
+        document.getElementById('strip-quality').addEventListener('input', (e) => {
+            document.getElementById('strip-quality-val').textContent = e.target.value + '%';
+        });
+
+        async function runStrip() {
+            const file = document.getElementById('strip-file').files[0];
+            document.getElementById('strip-error').classList.add('hidden');
+            if (!file) {
+                showNeed('strip-error', 'Select an image.');
+                return;
+            }
+            const fmt = document.getElementById('strip-format').value;
+            const q = fmt === 'image/png' ? 1 : parseInt(document.getElementById('strip-quality').value, 10) / 100;
+            try {
+                const blob = await convImg(file, fmt, q, 0, 0);
+                const ext = fmt === 'image/png' ? '.png' : fmt === 'image/webp' ? '.webp' : '.jpg';
+                const base = file.name.replace(/\.[^.]+$/, '') || file.name;
+                downloadFile(blob, base + '.stripped' + ext);
+                flash('re-encoded');
+            } catch (e) {
+                showNeed('strip-error', 'That file could not be read as an image.');
+            }
+        }
+
+        function runJson(mode) {
+            const err = document.getElementById('json-error');
+            err.classList.add('hidden');
+            try {
+                const data = JSON.parse(document.getElementById('json-input').value);
+                document.getElementById('json-output').value = mode === 'minify' ? JSON.stringify(data) : JSON.stringify(data, null, 2);
+            } catch (e) {
+                err.textContent = e.message;
+                err.classList.remove('hidden');
+            }
+        }
+
+        function runUrl(mode) {
+            const err = document.getElementById('url-error');
+            err.classList.add('hidden');
+            const input = document.getElementById('url-input').value;
+            try {
+                document.getElementById('url-output').value = mode === 'encode' ? encodeURIComponent(input) : decodeURIComponent(input);
+            } catch (e) {
+                err.textContent = 'Could not decode that string.';
+                err.classList.remove('hidden');
+            }
+        }
+
+        function runUuid() {
+            document.getElementById('uuid-out').value = crypto.randomUUID();
+        }
+
+        function copyUuid() {
+            const el = document.getElementById('uuid-out');
+            if (!el.value || el.value === 'ready') return;
+            copyFrom(el);
+        }
+
+        function epochFromUnix() {
+            const raw = document.getElementById('epoch-unix').value.trim();
+            const field = document.getElementById('epoch-local');
+            if (!raw) {
+                field.value = '';
+                return;
+            }
+            const n = Number(raw);
+            if (!Number.isFinite(n)) return;
+            const d = new Date(n * 1000);
+            if (Number.isNaN(d.getTime())) return;
+            const pad = (x) => String(x).padStart(2, '0');
+            field.value = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+        }
+
+        function epochFromLocal() {
+            const v = document.getElementById('epoch-local').value;
+            if (!v) {
+                document.getElementById('epoch-unix').value = '';
+                return;
+            }
+            const ms = new Date(v).getTime();
+            if (Number.isNaN(ms)) return;
+            document.getElementById('epoch-unix').value = String(Math.floor(ms / 1000));
+        }
+
+        renderUnitOptions();
+        switchPdfMode('merge');
+        switchBase64Mode('text');
+        switchSplitMode('cut');
+        syncStripQuality();
+        switchTab('encrypt');
+        tickClock();
+        setInterval(tickClock, 1000);
+    </script>
+</body>
+</html>
